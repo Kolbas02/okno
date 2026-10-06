@@ -2,11 +2,15 @@
 @tailwind components;
 @tailwind utilities;
 
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
+
 @layer base {
   * {
     -webkit-tap-highlight-color: transparent;
   }
   body {
+    font-family: 'Manrope', system-ui, sans-serif;
+    background: #020617;
     overscroll-behavior: none;
   }
 }
@@ -18,5 +22,16 @@
   }
   .scrollbar-hide::-webkit-scrollbar {
     display: none;
+  }
+  .glass {
+    background: rgba(15, 23, 42, 0.6);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+  }
+  .glow-green {
+    box-shadow: 0 0 20px rgba(16, 185, 129, 0.15), 0 0 60px rgba(16, 185, 129, 0.05);
+  }
+  .glow-indigo {
+    box-shadow: 0 0 20px rgba(99, 102, 241, 0.15), 0 0 60px rgba(99, 102, 241, 0.05);
   }
 }
