@@ -2,21 +2,17 @@ import { SCHEDULE_API } from "./config";
 import type { UniversityClass, CustomEvent, FreeWindow } from "./types";
 
 export async function fetchSchedule(groupId: number): Promise<UniversityClass[]> {
-  // Обрати внимание: теперь параметр называется group, как в API Губкина
-  const res = await fetch(`${SCHEDULE_API}?group=${groupId}`, {
+  const res = await fetch(`${SCHEDULE_API}?groupId=${groupId}`, {
     next: { revalidate: 21600 }, // Кэш на 6 часов
   });
 
   if (!res.ok) {
     const errorText = await res.text().catch(() => 'No response body');
-    throw new Error(`Schedule API error: ${res.status}. Body: ${errorText.slice(0, 200)}`);
+    throw new Error(`Schedule API error: ${res.status}. Body: ${errorText.slice(0, 300)}`);
   }
   
   const json = await res.json();
-  
-  // API schedule.gubkin.ru может возвращать данные немного в другом формате.
-  // Если внутри json есть поле data, возвращаем его, иначе весь json.
-  return (json.data || json) as UniversityClass[];
+  return json.data as UniversityClass[];
 }
 
 export function filterBySubgroupAndDate(
