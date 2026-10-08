@@ -13,6 +13,6 @@ export const USERS = {
   },
 } as const;
 
-export const SCHEDULE_API = "https://lk.gubkin.ru/schedule-api/activities";
+export const SCHEDULE_API = "https://gubkin-proxy.emildavydov7.workers.dev";
 
 export const TIME_SLOTS = { start: 8, end: 22 } as const;
