@@ -2,19 +2,14 @@ import { SCHEDULE_API } from "./config";
 import type { UniversityClass, CustomEvent, FreeWindow } from "./types";
 
 export async function fetchSchedule(groupId: number): Promise<UniversityClass[]> {
+  // Теперь запрос идет на твой Worker, а не напрямую в Губкин
   const res = await fetch(`${SCHEDULE_API}?groupId=${groupId}`, {
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
-      'Accept': 'application/json',
-      'Referer': 'https://lk.gubkin.ru/'
-    },
-    next: { revalidate: 21600 }, // Кэшируем на 6 часов, чтобы не спамить API вуза
+    next: { revalidate: 21600 }, // 6 часов кэш
   });
-
+  
   if (!res.ok) {
-    // Читаем текст ошибки, чтобы понять, что именно вернул сервер (часто это HTML с капчей)
     const errorText = await res.text().catch(() => 'No response body');
-    throw new Error(`Schedule API error: ${res.status} ${res.statusText}. Body: ${errorText.slice(0, 150)}`);
+    throw new Error(`Schedule API error: ${res.status}. Body: ${errorText.slice(0, 200)}`);
   }
   
   const json = await res.json();
