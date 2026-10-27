@@ -1,16 +1,16 @@
 export interface UniversityClass {
-  id: number;
-  date: string;
-  weekDay: string;
-  startTime: string;
-  endTime: string;
-  type: string;
+  id: string;
   name: string;
-  note: string;
-  lecturer: string;
+  type: string;
+  startTime: string;   // "08:30"
+  endTime: string;      // "10:00"
   room: string;
   building: string;
-  subgroup: string;
+  lecturer: string;
+  subgroup: number;     // 0 = все, 1 или 2
+  isCanceled: boolean;
+  isMoved: boolean;
+  movedTo?: string;
 }
 
 export interface CustomEvent {
@@ -20,7 +20,7 @@ export interface CustomEvent {
   startTime: string;
   endTime: string;
   owner: "emil" | "yasya" | "both";
-  color?: string;
+  color: string;
 }
 
 export interface FreeWindow {

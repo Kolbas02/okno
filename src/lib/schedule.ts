@@ -1,83 +1,208 @@
 import { SCHEDULE_API } from "./config";
-import type { UniversityClass, CustomEvent, FreeWindow } from "./types";
+import type { UniversityClass, FreeWindow } from "./types";
 
-export async function fetchSchedule(groupId: number): Promise<UniversityClass[]> {
-  const res = await fetch(`${SCHEDULE_API}?groupId=${groupId}`, {
-    next: { revalidate: 21600 }, // Кэш на 6 часов
+/**
+ * Формат даты для API Губкина: DD-MM-YYYY
+ */
+function toGubkinDate(isoDate: string): string {
+  const [y, m, d] = isoDate.split("-");
+  return `${d}-${m}-${y}`;
+}
+
+/**
+ * Номер дня недели из ISO-даты (0=Пн, 6=Вс) — как в API
+ */
+function getWeekDayNumber(isoDate: string): number {
+  const d = new Date(isoDate);
+  return (d.getDay() + 6) % 7; // JS: 0=Вс → нам: 0=Пн
+}
+
+/**
+ * Из массива timeChunks индексов + массива слотов → startTime, endTime
+ * Пример: chunks=[4,5], slots=["8:30-9:15","9:15-10:00","10:15-11:00","11:00-11:45","12:00-12:45","12:45-13:30"]
+ * → startTime="12:00", endTime="13:30"
+ */
+function resolveTime(
+  chunks: number[],
+  timeSlots: string[]
+): { startTime: string; endTime: string } {
+  if (!chunks.length || !timeSlots.length) {
+    return { startTime: "", endTime: "" };
+  }
+
+  const firstChunk = Math.min(...chunks);
+  const lastChunk = Math.max(...chunks);
+
+  const firstSlot = timeSlots[firstChunk];
+  const lastSlot = timeSlots[lastChunk];
+
+  if (!firstSlot || !lastSlot) {
+    return { startTime: "", endTime: "" };
+  }
+
+  const startTime = firstSlot.split("-")[0].trim();
+  const endTime = lastSlot.split("-")[1].trim();
+
+  // нормализация "8:30" → "08:30"
+  const pad = (t: string) => {
+    const [h, m] = t.split(":");
+    return `${h.padStart(2, "0")}:${m}`;
+  };
+
+  return { startTime: pad(startTime), endTime: pad(endTime) };
+}
+
+/**
+ * Получить расписание группы на неделю с API Губкина
+ */
+export async function fetchSchedule(
+  groupId: string,
+  isoDate: string
+): Promise<{ lessons: any[]; timeSlots: string[] }> {
+  const url = `${SCHEDULE_API}?act=schedule&date=${toGubkinDate(isoDate)}&groupId=${groupId}`;
+
+  const res = await fetch(url, {
+    headers: {
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+      Accept: "application/json",
+    },
+    cache: "no-store",
   });
 
   if (!res.ok) {
-    const errorText = await res.text().catch(() => 'No response body');
-    throw new Error(`Schedule API error: ${res.status}. Body: ${errorText.slice(0, 300)}`);
+    const text = await res.text();
+    throw new Error(`Gubkin API ${res.status}: ${text.slice(0, 200)}`);
   }
-  
-  const json = await res.json();
-  return json.data as UniversityClass[];
+
+  const data = await res.json();
+
+  if (!data.state) {
+    throw new Error("API вернул state=false");
+  }
+
+  // Москва — organizations[0]
+  const moscow = data.rows?.organizations?.find((o: any) => o.id === 0);
+  if (!moscow) {
+    throw new Error("Организация Москва не найдена");
+  }
+
+  return {
+    lessons: moscow.lessons || [],
+    timeSlots: moscow.lessonsTimeChunks || [],
+  };
 }
 
-export function filterBySubgroupAndDate(
-  classes: UniversityClass[],
-  subgroup: string,
-  date: string
+/**
+ * Фильтр пар по дню недели, подгруппе, отмене/переносу → UniversityClass[]
+ */
+export function parseLessons(
+  lessons: any[],
+  timeSlots: string[],
+  subgroup: 1 | 2,
+  isoDate: string
 ): UniversityClass[] {
-  return classes
-    .filter((c) => c.date === date)
-    .filter((c) => c.subgroup === "" || c.subgroup === subgroup)
+  const targetDay = getWeekDayNumber(isoDate);
+
+  return lessons
+    .filter((lesson) => {
+      // только нужный день
+      if (lesson.weekDayNumber !== targetDay) return false;
+      // отменённые — не показываем
+      if (lesson.isCanceled) return false;
+      // перенесённые — не показываем в исходный день
+      if (lesson.isMoved) return false;
+      // подгруппа: 0 = общая, иначе только своя
+      if (lesson.subgroup !== 0 && lesson.subgroup !== subgroup) return false;
+      return true;
+    })
+    .map((lesson) => {
+      const { startTime, endTime } = resolveTime(
+        lesson.timeChunks || [],
+        timeSlots
+      );
+
+      // преподаватель: если есть замена — берём из changes
+      const teachers =
+        lesson.changes?.teachers?.length > 0
+          ? lesson.changes.teachers
+          : lesson.teachers || [];
+
+      const lecturer = teachers
+        .map(
+          (t: any) =>
+            `${t.lastName || ""} ${t.firstName?.[0] || ""}.${t.patronymic?.[0] || ""}.`
+        )
+        .join(", ");
+
+      // аудитория: если есть замена — берём из changes
+      const rooms =
+        lesson.changes?.rooms?.length > 0
+          ? lesson.changes.rooms
+          : lesson.rooms || [];
+
+      const room = rooms.map((r: any) => r.number).join(", ");
+
+      return {
+        id: String(lesson.id || Math.random()),
+        name: lesson.course?.name || "",
+        type: lesson.type || "",
+        startTime,
+        endTime,
+        room,
+        building: "",
+        lecturer,
+        subgroup: lesson.subgroup ?? 0,
+        isCanceled: !!lesson.isCanceled,
+        isMoved: !!lesson.isMoved,
+        movedTo: lesson.movedTo || undefined,
+      };
+    })
     .sort((a, b) => a.startTime.localeCompare(b.startTime));
 }
 
-function timeToMinutes(time: string): number {
-  const [h, m] = time.split(":").map(Number);
-  return h * 60 + m;
-}
-
-function minutesToTime(mins: number): string {
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`;
-}
-
+/**
+ * Свободные окна между парами двух людей
+ */
 export function findFreeWindows(
-  emilClasses: UniversityClass[],
-  yasyaClasses: UniversityClass[],
-  customEvents: CustomEvent[],
-  dayStart = "08:00",
-  dayEnd = "22:00",
-  minDuration = 30
+  emil: UniversityClass[],
+  yasya: UniversityClass[],
+  events: { startTime: string; endTime: string }[]
 ): FreeWindow[] {
-  const busy: { start: number; end: number }[] = [];
-  for (const c of [...emilClasses, ...yasyaClasses]) {
-    busy.push({ start: timeToMinutes(c.startTime), end: timeToMinutes(c.endTime) });
-  }
-  for (const e of customEvents) {
-    busy.push({ start: timeToMinutes(e.startTime), end: timeToMinutes(e.endTime) });
-  }
-  busy.sort((a, b) => a.start - b.start);
-  const merged: { start: number; end: number }[] = [];
-  for (const b of busy) {
-    if (merged.length === 0 || merged[merged.length - 1].end < b.start) {
-      merged.push({ ...b });
-    } else {
-      merged[merged.length - 1].end = Math.max(merged[merged.length - 1].end, b.end);
-    }
-  }
+  const all = [...emil, ...yasya, ...events]
+    .map((c) => ({ start: c.startTime, end: c.endTime }))
+    .filter((c) => c.start && c.end)
+    .sort((a, b) => a.start.localeCompare(b.start));
+
+  const DAY_START = "08:00";
+  const DAY_END = "22:00";
   const windows: FreeWindow[] = [];
-  let cursor = timeToMinutes(dayStart);
-  const end = timeToMinutes(dayEnd);
-  for (const b of merged) {
-    if (b.start > cursor) {
-      const duration = b.start - cursor;
-      if (duration >= minDuration) {
-        windows.push({ startTime: minutesToTime(cursor), endTime: minutesToTime(b.start), durationMinutes: duration });
-      }
+  let cursor = DAY_START;
+
+  for (const slot of all) {
+    if (cursor < slot.start) {
+      windows.push({
+        startTime: cursor,
+        endTime: slot.start,
+        durationMinutes: diffMinutes(cursor, slot.start),
+      });
     }
-    cursor = Math.max(cursor, b.end);
+    if (slot.end > cursor) cursor = slot.end;
   }
-  if (end > cursor) {
-    const duration = end - cursor;
-    if (duration >= minDuration) {
-      windows.push({ startTime: minutesToTime(cursor), endTime: minutesToTime(end), durationMinutes: duration });
-    }
+
+  if (cursor < DAY_END) {
+    windows.push({
+      startTime: cursor,
+      endTime: DAY_END,
+      durationMinutes: diffMinutes(cursor, DAY_END),
+    });
   }
-  return windows;
+
+  return windows.filter((w) => w.durationMinutes >= 30);
+}
+
+function diffMinutes(a: string, b: string): number {
+  const [ah, am] = a.split(":").map(Number);
+  const [bh, bm] = b.split(":").map(Number);
+  return bh * 60 + bm - (ah * 60 + am);
 }

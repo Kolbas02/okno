@@ -1,18 +1,14 @@
+export const SCHEDULE_API = "https://lk.gubkin.ru/schedule/api/api.php";
+
 export const USERS = {
   emil: {
+    groupId: "9716",    // КВ-24-07
+    subgroup: 1 as 1 | 2,
     name: "Эмиль",
-    groupId: 9716,
-    groupName: "КВ-24-07",
-    subgroup: "КВ-24-07_1",
   },
   yasya: {
+    groupId: "10194",    // ← ЗАМЕНИ на реальный groupId Яси
+    subgroup: 1 as 1 | 2,
     name: "Яся",
-    groupId: 10194,
-    groupName: "КН-25-09",
-    subgroup: "КН-25-09_2",
   },
 } as const;
-
-export const SCHEDULE_API = "https://gubkin-proxy.emildavydov7.workers.dev";
-
-export const TIME_SLOTS = { start: 8, end: 22 } as const;
